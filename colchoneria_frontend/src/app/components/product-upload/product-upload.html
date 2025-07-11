@@ -1,0 +1,26 @@
+<!-- src/app/components/product-upload/product-upload.component.html -->
+<div class="product-upload-container">
+  <h3>Subir Productos desde Excel</h3>
+
+  <!-- Indicador de carga / Mensaje de espera -->
+  <div *ngIf="isLoading" class="loading-message">
+    <div class="spinner"></div> <!-- Un spinner CSS simple -->
+    {{ uploadMessage }}
+  </div>
+
+  <!-- Mensaje de éxito (solo si no está cargando y no hay error) -->
+  <div *ngIf="!isLoading && uploadMessage && !errorMessage" class="upload-success-toolbar">
+    {{ uploadMessage }}
+  </div>
+  
+  <!-- Mensaje de error (siempre se muestra si hay error) -->
+  <div *ngIf="errorMessage" class="error-message">
+    {{ errorMessage }}
+  </div>
+
+  <!-- Formulario de subida (oculto mientras carga) -->
+  <div *ngIf="!isLoading">
+    <input type="file" (change)="onFileSelected($event)" accept=".xlsx, .xls">
+    <button (click)="onUpload()" [disabled]="!selectedFile || isLoading">Subir Excel</button>
+  </div>
+</div>

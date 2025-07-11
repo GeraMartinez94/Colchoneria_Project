@@ -1,0 +1,48 @@
+<!-- src/app/components/product-details/product-details.component.html -->
+<div class="product-details-wrapper">
+  <div *ngIf="loading" class="loading-message">
+    Cargando detalles del producto...
+  </div>
+
+  <div *ngIf="errorMessage" class="error-message">
+    {{ errorMessage }}
+    <button (click)="goBackToList()" class="back-button">Volver a Productos</button>
+  </div>
+
+  <div *ngIf="product && !loading" class="product-details-container">
+    <button (click)="goBackToList()" class="back-button">
+      <i class="fas fa-arrow-left"></i> Volver a Productos
+    </button>
+
+    <div class="product-header">
+      <h2 class="product-name">{{ product.nombre }}</h2>
+      <p class="product-category" *ngIf="product.categoria">{{ product.categoria }}</p>
+    </div>
+
+    <div class="product-content">
+      <div class="product-image-large">
+        <img [src]="product.imagen_url || 'https://placehold.co/600x400/e0e0e0/555555?text=Producto'" 
+             alt="{{ product.nombre }}" 
+             onerror="this.onerror=null;this.src='https://placehold.co/600x400/e0e0e0/555555?text=No+Imagen';"
+        >
+      </div>
+      
+      <div class="product-info-section">
+        <p class="product-description">{{ product.descripcion }}</p>
+        <div class="product-price-large">{{ product.precio | currency:'USD':'symbol':'1.2-2' }}</div>
+        <div class="product-stock-large">Stock disponible: {{ product.stock }} unidades</div>
+        
+        <div class="payment-methods-section">
+          <h3>Formas de Pago</h3>
+          <ul>
+            <li *ngFor="let method of paymentMethods">
+              <i class="fas fa-check-circle"></i> {{ method }}
+            </li>
+          </ul>
+        </div>
+        
+        <button class="add-to-cart-button">Añadir al Carrito (Ejemplo)</button>
+      </div>
+    </div>
+  </div>
+</div>
