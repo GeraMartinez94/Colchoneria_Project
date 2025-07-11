@@ -7,8 +7,8 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, login_
 from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 from io import BytesIO
+import urllib.parse
 import os # Importar os para variables de entorno
-import urllib.parse # Para codificar la contraseña en la URI
 
 # Importar la configuración desde config.py
 from config import Config
@@ -21,23 +21,28 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = Config.SQLALCHEMY_TRACK_MODIFICAT
 app.config['SECRET_KEY'] = Config.SECRET_KEY
 
 
-# --- LÍNEA PARA DEPURACIÓN DE URI ---
-print(f"DEBUG: SQLALCHEMY_DATABASE_URI configurada: {app.config['SQLALCHEMY_DATABASE_URI']}")
-
-
 # Inicializar SQLAlchemy
 db = SQLAlchemy(app)
 
 # Inicializar Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login'
+# Aunque no redirigiremos directamente, es buena práctica mantenerlo apuntando a la vista de login
+login_manager.login_view = 'login' 
+
+# --- CAMBIO CRUCIAL AQUÍ: Manejador de acceso no autorizado para API ---
+@login_manager.unauthorized_handler
+def unauthorized():
+    # Para solicitudes de API (que vienen de Angular), siempre devolvemos un 401 JSON
+    # Angular se encargará de la redirección al login.
+    return jsonify({"message": "No autorizado. Por favor, inicia sesión."}), 401
 
 # Habilitar CORS
 CORS(app) 
 
 # --- Modelos de Base de Datos ---
 
+# Modelo para Productos (ya existente, solo se asegura la columna categoria)
 class Product(db.Model):
     __tablename__ = 'productos'
     id = db.Column(db.Integer, primary_key=True)
@@ -67,6 +72,7 @@ class Product(db.Model):
             'fecha_actualizacion': self.fecha_actualizacion.isoformat() if self.fecha_actualizacion else None
         }
 
+# --- Nuevo Modelo para Usuarios ---
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
@@ -83,6 +89,7 @@ class User(UserMixin, db.Model):
     def __repr__(self):
         return f'<User {self.username}>'
 
+# --- Flask-Login: Función para cargar usuarios ---
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
@@ -90,8 +97,6 @@ def load_user(user_id):
 # --- Creación de tablas en la base de datos ---
 with app.app_context():
     db.create_all()
-    # --- LÍNEA PARA DEPURACIÓN DE TABLAS ---
-    print("DEBUG: db.create_all() ha sido ejecutado. Verificando tablas...")
 
 # --- Rutas de la API ---
 
@@ -116,6 +121,7 @@ def get_product_detail(product_id):
     try:
         product = Product.query.get(product_id)
         if product:
+            return jsonify(product.to_dict())
             return jsonify(product.to_dict())
         else:
             return jsonify({"message": f"Producto con ID {product_id} no encontrado."}), 404
@@ -227,6 +233,8 @@ def get_unique_categories():
         print(f"Error al obtener categorías: {e}")
         return jsonify({"message": "Error al obtener categorías."}), 500
 
+# --- Rutas de Autenticación ---
+
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -247,8 +255,16 @@ def register():
 
     return jsonify({"message": "Usuario registrado exitosamente", "user": {"username": username, "is_admin": is_admin}}), 201
 
-@app.route('/api/login', methods=['POST'])
+# Ruta para iniciar sesión
+@app.route('/api/login', methods=['GET', 'POST']) 
 def login():
+    if request.method == 'GET':
+        # Esta rama maneja las peticiones GET a /api/login, que ocurren cuando
+        # Flask-Login redirige a esta URL porque un usuario no está autenticado
+        # y trató de acceder a una ruta protegida.
+        return jsonify({"message": "Por favor, inicia sesión para continuar."}), 200
+
+    # Si es una petición POST (envío del formulario de login desde Angular)
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
@@ -256,17 +272,19 @@ def login():
     user = User.query.filter_by(username=username).first()
 
     if user and user.check_password(password):
-        login_user(user)
+        login_user(user) # Inicia la sesión del usuario
         return jsonify({"message": "Inicio de sesión exitoso", "user": {"username": user.username, "is_admin": user.is_admin}}), 200
     else:
         return jsonify({"message": "Credenciales inválidas"}), 401
 
+# Ruta para cerrar sesión
 @app.route('/logout', methods=['POST'])
 @login_required
 def logout():
-    logout_user()
+    logout_user() # Cierra la sesión del usuario
     return jsonify({"message": "Sesión cerrada exitosamente"}), 200
 
+# Ruta para verificar el estado de la sesión (útil para el frontend)
 @app.route('/api/session_status', methods=['GET'])
 def session_status():
     if current_user.is_authenticated:
@@ -274,5 +292,6 @@ def session_status():
     else:
         return jsonify({"is_authenticated": False}), 200
 
+# --- Ejecutar la aplicación ---
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

@@ -21,11 +21,10 @@ interface SessionStatus {
   providedIn: 'root'
 })
 export class AuthService {
-    private baseUrl = 'https://colchoneria.onrender.com';
-    private loginUrl = '/api/login'
-  private logoutUrl = '/logout';
-  private sessionStatusUrl = '/api/session_status';
-
+  private baseUrl = 'https://colchoneria-backend.onrender.com'; 
+  private loginUrl = `${this.baseUrl}/api/login`; // <-- ¡CORRECCIÓN AQUÍ!
+  private logoutUrl = `${this.baseUrl}/logout`; // <-- ¡CORRECCIÓN AQUÍ!
+  private sessionStatusUrl = `${this.baseUrl}/api/session_status`;
   // BehaviorSubject para mantener el estado de autenticación y el rol
   // Lo inicializamos con un estado no autenticado por defecto
   private _isAuthenticated = new BehaviorSubject<boolean>(false);
