@@ -1,6 +1,6 @@
 # colchoneria_backend/app.py
 
-from flask import Flask, request, jsonify, redirect, url_for, flash
+from flask import Flask, request, jsonify, redirect, url_for, flash, session # Asegúrate de que 'session' esté importado
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -19,9 +19,15 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or Config
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = Config.SQLALCHEMY_TRACK_MODIFICATIONS
 app.config['SECRET_KEY'] = Config.SECRET_KEY
 
+# --- CONFIGURACIÓN CRUCIAL DE LAS COOKIES DE SESIÓN PARA PRODUCCIÓN ---
+# Esto es esencial para que las cookies de sesión se envíen correctamente
+# en solicitudes de origen cruzado (frontend en Netlify, backend en Render)
+# y solo sobre HTTPS.
 app.config['SESSION_COOKIE_SAMESITE'] = 'None' # Permite enviar la cookie en solicitudes de origen cruzado
-app.config['SESSION_COOKIE_SECURE'] = True    # La cookie solo se enviará sobre HTTPS
-app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = True     # La cookie solo se enviará sobre HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True   # La cookie no es accesible desde JavaScript del lado del cliente
+# --- FIN DE LA CONFIGURACIÓN DE LAS COOKIES DE SESIÓN ---
+
 # --- LÍNEA PARA DEPURACIÓN: Imprime la URI de la base de datos que Flask está usando ---
 print(f"DEBUG: SQLALCHEMY_DATABASE_URI configurada: {app.config['SQLALCHEMY_DATABASE_URI']}")
 
@@ -50,9 +56,8 @@ def unauthorized():
 # pueda hacer peticiones a tu backend Flask.
 # `supports_credentials=True` es esencial para que las cookies de sesión (usadas por Flask-Login)
 # sean enviadas y recibidas correctamente entre el frontend y el backend.
-# Asegúrate de que los orígenes listados incluyan la URL de tu frontend de Render si lo despliegas allí.
+# Asegúrate de que los orígenes listados incluyan la URL de tu frontend desplegado en Netlify/Vercel.
 CORS(app, resources={r"/*": {"origins": ["http://localhost:4200", "https://colchoneriafrontend.netlify.app"]}}, supports_credentials=True)
-# Nota: "https://colchoneria-frontend-tu-id.onrender.com" es un ejemplo, reemplázalo con la URL real de tu frontend desplegado.
 
 
 # --- Modelos de Base de Datos ---
