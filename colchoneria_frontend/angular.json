@@ -60,7 +60,7 @@
             "serve": {
               "builder": "@angular/build:dev-server",
               "options": {
-              },
+                },
               "configurations": {
                 "production": {
                   "buildTarget": "colchoneria_frontend:build:production"
