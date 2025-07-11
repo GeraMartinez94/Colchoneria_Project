@@ -7,13 +7,23 @@ from flask_login import LoginManager, UserMixin, login_user, logout_user, login_
 from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 from io import BytesIO
-import urllib.parse
+import os # Importar os para variables de entorno
+import urllib.parse # Para codificar la contraseña en la URI
 
 # Importar la configuración desde config.py
 from config import Config
 
 app = Flask(__name__)
-app.config.from_object(Config)
+# Render inyectará la URL de la base de datos como una variable de entorno DATABASE_URL
+# Si DATABASE_URL existe (en Render), la usa; de lo contrario, usa la de config.py (para desarrollo local)
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or Config.SQLALCHEMY_DATABASE_URI
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = Config.SQLALCHEMY_TRACK_MODIFICATIONS
+app.config['SECRET_KEY'] = Config.SECRET_KEY
+
+
+# --- LÍNEA PARA DEPURACIÓN DE URI ---
+print(f"DEBUG: SQLALCHEMY_DATABASE_URI configurada: {app.config['SQLALCHEMY_DATABASE_URI']}")
+
 
 # Inicializar SQLAlchemy
 db = SQLAlchemy(app)
@@ -21,14 +31,13 @@ db = SQLAlchemy(app)
 # Inicializar Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login' # Define la vista a la que redirigir si no está logueado
+login_manager.login_view = 'login'
 
 # Habilitar CORS
 CORS(app) 
 
 # --- Modelos de Base de Datos ---
 
-# Modelo para Productos (ya existente, solo se asegura la columna categoria)
 class Product(db.Model):
     __tablename__ = 'productos'
     id = db.Column(db.Integer, primary_key=True)
@@ -58,12 +67,11 @@ class Product(db.Model):
             'fecha_actualizacion': self.fecha_actualizacion.isoformat() if self.fecha_actualizacion else None
         }
 
-# --- Nuevo Modelo para Usuarios ---
 class User(UserMixin, db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False) # <-- Asegurado a 255 para hashes largos
+    password_hash = db.Column(db.String(255), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
 
     def set_password(self, password):
@@ -75,19 +83,18 @@ class User(UserMixin, db.Model):
     def __repr__(self):
         return f'<User {self.username}>'
 
-# --- Flask-Login: Función para cargar usuarios ---
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
 # --- Creación de tablas en la base de datos ---
-# Esto creará las tablas definidas por los modelos si no existen.
 with app.app_context():
     db.create_all()
+    # --- LÍNEA PARA DEPURACIÓN DE TABLAS ---
+    print("DEBUG: db.create_all() ha sido ejecutado. Verificando tablas...")
 
 # --- Rutas de la API ---
 
-# Ruta pública: Ver productos (accesible para todos)
 @app.route('/api/productos', methods=['GET'])
 def get_productos():
     try:
@@ -95,7 +102,7 @@ def get_productos():
         if categoria_filtro:
             productos = Product.query.filter(
                 Product.activo == True, 
-                Product.categoria.ilike(categoria_filtro)
+                Product.categoria.ilike(f"%{categoria_filtro}%")
             ).all()
         else:
             productos = Product.query.filter_by(activo=True).all()
@@ -104,7 +111,18 @@ def get_productos():
         print(f"Error al obtener productos: {e}")
         return jsonify({"message": "Error al obtener productos de la base de datos."}), 500
 
-# Ruta protegida: Subir Excel (solo para administradores)
+@app.route('/api/productos/<int:product_id>', methods=['GET'])
+def get_product_detail(product_id):
+    try:
+        product = Product.query.get(product_id)
+        if product:
+            return jsonify(product.to_dict())
+        else:
+            return jsonify({"message": f"Producto con ID {product_id} no encontrado."}), 404
+    except Exception as e:
+        print(f"Error al obtener detalle del producto: {e}")
+        return jsonify({"message": "Error al obtener el detalle del producto de la base de datos."}), 500
+
 @app.route('/api/upload-excel', methods=['POST'])
 @login_required
 def upload_excel():
@@ -186,7 +204,6 @@ def upload_excel():
     else:
         return jsonify({"message": "Formato de archivo no soportado. Por favor, sube un .xlsx o .xls"}), 400
 
-# Ruta protegida: Eliminar todos los productos (solo para administradores)
 @app.route('/api/productos', methods=['DELETE'])
 @login_required
 def delete_all_products():
@@ -201,7 +218,6 @@ def delete_all_products():
         print(f"Error al eliminar productos: {e}")
         return jsonify({"message": "Error al eliminar los productos de la base de datos."}), 500
 
-# Ruta pública: Obtener categorías únicas (accesible para todos)
 @app.route('/api/categorias', methods=['GET'])
 def get_unique_categories():
     try:
@@ -211,9 +227,6 @@ def get_unique_categories():
         print(f"Error al obtener categorías: {e}")
         return jsonify({"message": "Error al obtener categorías."}), 500
 
-# --- Rutas de Autenticación ---
-
-# Ruta para registrar un nuevo usuario (solo para configuración inicial/pruebas)
 @app.route('/register', methods=['POST'])
 def register():
     data = request.get_json()
@@ -234,15 +247,8 @@ def register():
 
     return jsonify({"message": "Usuario registrado exitosamente", "user": {"username": username, "is_admin": is_admin}}), 201
 
-# Ruta para iniciar sesión
-@app.route('/login', methods=['GET', 'POST']) # <-- ¡CORRECCIÓN AQUÍ: Añadido 'GET'!
+@app.route('/api/login', methods=['POST'])
 def login():
-    if request.method == 'GET':
-        # Esta rama maneja las peticiones GET a /login
-        # Simplemente devuelve un mensaje, ya que el frontend Angular maneja la UI de la página de login.
-        return jsonify({"message": "Accede a la página de inicio de sesión."}), 200
-
-    # Si es una petición POST (envío del formulario de login)
     data = request.get_json()
     username = data.get('username')
     password = data.get('password')
@@ -250,19 +256,17 @@ def login():
     user = User.query.filter_by(username=username).first()
 
     if user and user.check_password(password):
-        login_user(user) # Inicia la sesión del usuario
+        login_user(user)
         return jsonify({"message": "Inicio de sesión exitoso", "user": {"username": user.username, "is_admin": user.is_admin}}), 200
     else:
         return jsonify({"message": "Credenciales inválidas"}), 401
 
-# Ruta para cerrar sesión
 @app.route('/logout', methods=['POST'])
 @login_required
 def logout():
     logout_user()
     return jsonify({"message": "Sesión cerrada exitosamente"}), 200
 
-# Ruta para verificar el estado de la sesión (útil para el frontend)
 @app.route('/api/session_status', methods=['GET'])
 def session_status():
     if current_user.is_authenticated:
@@ -270,6 +274,5 @@ def session_status():
     else:
         return jsonify({"is_authenticated": False}), 200
 
-# --- Ejecutar la aplicación ---
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
