@@ -49,7 +49,7 @@ def unauthorized():
 # `supports_credentials=True` es esencial para que las cookies de sesión (usadas por Flask-Login)
 # sean enviadas y recibidas correctamente entre el frontend y el backend.
 # Asegúrate de que los orígenes listados incluyan la URL de tu frontend de Render si lo despliegas allí.
-CORS(app, resources={r"/*": {"origins": ["http://localhost:4200", "https://colchoneria-frontend-tu-id.onrender.com"]}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": ["http://localhost:4200", "https://colchoneriafrontend.netlify.app"]}}, supports_credentials=True)
 # Nota: "https://colchoneria-frontend-tu-id.onrender.com" es un ejemplo, reemplázalo con la URL real de tu frontend desplegado.
 
 
