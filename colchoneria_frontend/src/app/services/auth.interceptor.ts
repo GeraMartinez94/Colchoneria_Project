@@ -24,8 +24,7 @@
               // Redirige al usuario a la página de login de Angular
               // Asegúrate de que '/login' sea la ruta correcta a tu componente de login en Angular
               this.router.navigate(['/login']); 
-              // Puedes añadir un mensaje flash o notificación aquí si lo deseas
-              console.error('Redirigiendo a login debido a 401 Unauthorized.');
+              console.error('Redirigiendo a login debido a 401 Unauthorized desde el interceptor.');
             }
             // Re-lanza el error para que otros manejadores de errores o el componente lo capturen
             return throwError(() => error);
