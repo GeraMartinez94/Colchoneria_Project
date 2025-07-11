@@ -19,7 +19,9 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL') or Config
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = Config.SQLALCHEMY_TRACK_MODIFICATIONS
 app.config['SECRET_KEY'] = Config.SECRET_KEY
 
-
+app.config['SESSION_COOKIE_SAMESITE'] = 'None' # Permite enviar la cookie en solicitudes de origen cruzado
+app.config['SESSION_COOKIE_SECURE'] = True    # La cookie solo se enviará sobre HTTPS
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 # --- LÍNEA PARA DEPURACIÓN: Imprime la URI de la base de datos que Flask está usando ---
 print(f"DEBUG: SQLALCHEMY_DATABASE_URI configurada: {app.config['SQLALCHEMY_DATABASE_URI']}")
 
