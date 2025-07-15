@@ -160,6 +160,9 @@ def get_product_detail(product_id):
 @app.route('/api/upload-excel', methods=['POST'])
 @login_required # Requires user to be logged in
 def upload_excel():
+    # Añade esta línea para depurar lo que request.files contiene
+    print(f"DEBUG: request.files content: {request.files}")
+
     # Check if the current user is an admin
     if not current_user.is_admin:
         return jsonify({"message": "Access denied. Only administrators can upload files."}), 403
