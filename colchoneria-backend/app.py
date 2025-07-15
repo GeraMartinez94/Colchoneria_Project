@@ -361,13 +361,21 @@ def login():
     username = data.get('username')
     password = data.get('password')
 
+    print(f"Attempting login for username: {username}") # Añade esta línea
     user = User.query.filter_by(username=username).first()
 
-    if user and user.check_password(password):
-        login_user(user)
-        return jsonify({"message": "Login successful", "user": {"username": user.username, "is_admin": user.is_admin}}), 200
+    if user:
+        print(f"User found: {user.username}, is_admin: {user.is_admin}") # Añade esta línea
+        if user.check_password(password):
+            print("Password check successful.") # Añade esta línea
+            login_user(user)
+            return jsonify({"message": "Login successful", "user": {"username": user.username, "is_admin": user.is_admin}}), 200
+        else:
+            print("Password check failed.") # Añade esta línea
     else:
-        return jsonify({"message": "Invalid credentials"}), 401
+        print(f"User not found for username: {username}") # Añade esta línea
+
+    return jsonify({"message": "Invalid credentials"}), 401
 
 # Route for user logout
 @app.route('/logout', methods=['POST'])
