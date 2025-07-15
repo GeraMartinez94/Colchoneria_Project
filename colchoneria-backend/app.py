@@ -8,6 +8,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import pandas as pd
 from io import BytesIO
 import os
+from datetime import timedelta # Importar timedelta para la duración de la sesión
 
 # Cloudinary imports
 import cloudinary
@@ -26,7 +27,12 @@ app.config['SECRET_KEY'] = Config.SECRET_KEY
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 app.config['SESSION_COOKIE_SECURE'] = True # Must be True for SameSite=None in production (HTTPS)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_DOMAIN'] = '.onrender.com' 
+app.config['SESSION_COOKIE_DOMAIN'] = '.onrender.com'
+# Configurar la duración de la sesión permanente (ej. 7 días), si se usa remember=True
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7) # Puedes ajustar esto
+
+# Aumentar el límite de tamaño de archivo para las subidas (ej. 16 MB)
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 # 16 Megabytes
 
 print(f"DEBUG: SQLALCHEMY_DATABASE_URI configured: {app.config['SQLALCHEMY_DATABASE_URI']}")
 
@@ -70,13 +76,13 @@ CORS(app, resources={r"/*": {"origins": ["http://localhost:4200", "https://colch
 class Product(db.Model):
     __tablename__ = 'productos'
     id = db.Column(db.Integer, primary_key=True)
-    sku = db.Column(db.String(100), unique=True, nullable=False)
+    sku = db.Column(db.String(100), unique=True, nullable=True) # Cambiado a nullable=True
     nombre = db.Column(db.String(255), nullable=False)
     descripcion = db.Column(db.Text)
     categoria = db.Column(db.String(100), default='General')
     precio = db.Column(db.DECIMAL(10, 2), nullable=False)
     stock = db.Column(db.Integer, nullable=False, default=0)
-    imagen_url = db.Column(db.String(255)) # Field to store the image URL from Cloudinary
+    image_url = db.Column(db.String(255)) # Campo para almacenar la URL de la imagen de Cloudinary
     activo = db.Column(db.Boolean, default=True)
     fecha_creacion = db.Column(db.TIMESTAMP, default=db.func.current_timestamp())
     fecha_actualizacion = db.Column(db.TIMESTAMP, default=db.func.current_timestamp(), onupdate=db.func.current_timestamp())
@@ -91,7 +97,7 @@ class Product(db.Model):
             'categoria': self.categoria,
             'precio': float(self.precio),
             'stock': self.stock,
-            'imagen_url': self.imagen_url, # Include image URL in the dictionary
+            'imageUrl': self.image_url, # Asegúrate de que coincida con el frontend (imageUrl)
             'activo': self.activo,
             'fecha_creacion': self.fecha_creacion.isoformat() if self.fecha_creacion else None,
             'fecha_actualizacion': self.fecha_actualizacion.isoformat() if self.fecha_actualizacion else None
@@ -160,19 +166,25 @@ def get_product_detail(product_id):
 @app.route('/api/upload-excel', methods=['POST'])
 @login_required # Requires user to be logged in
 def upload_excel():
+    print("DEBUG: /api/upload-excel endpoint reached.")
+
     # Check if the current user is an admin
     if not current_user.is_admin:
+        print("DEBUG: User is not admin. Access denied (403).")
         return jsonify({"message": "Access denied. Only administrators can upload files."}), 403
 
     # 1. Handle Excel file
     if 'excel_file' not in request.files:
+        print("DEBUG: 'excel_file' not found in request.files.")
         return jsonify({"message": "No Excel file found"}), 400
 
     excel_file = request.files['excel_file']
     if excel_file.filename == '':
+        print("DEBUG: Excel file selected but filename is empty.")
         return jsonify({"message": "Excel file not selected"}), 400
 
-    if not excel_file.filename.endswith(('.xlsx', '.xls')):
+    if not excel_file.filename.lower().endswith(('.xlsx', '.xls')): # Usar .lower() para ser case-insensitive
+        print(f"DEBUG: Unsupported Excel file format: {excel_file.filename}")
         return jsonify({"message": "Unsupported Excel file format. Please upload a .xlsx or .xls"}), 400
 
     # 2. Handle image files (optional)
@@ -196,12 +208,11 @@ def upload_excel():
 
             try:
                 # Upload the file to Cloudinary
-                # 'public_id' helps control the file name in Cloudinary
-                # 'folder' organizes your images into a specific folder in Cloudinary
                 upload_result = cloudinary.uploader.upload(img_file,
                                                           public_id=normalized_filename,
                                                           folder="colchoneria_products", # Folder in your Cloudinary account
-                                                          resource_type="image") # Ensure it's treated as an image
+                                                          resource_type="image", # Ensure it's treated as an image
+                                                          overwrite=True) # Overwrite if an image with the same public_id exists
                 public_url = upload_result['secure_url'] # Get the secure HTTPS URL
                 image_urls_map[normalized_filename] = public_url
                 print(f"DEBUG: Uploaded {original_filename} to Cloudinary: {public_url}")
@@ -221,31 +232,33 @@ def upload_excel():
 
     try:
         df = pd.read_excel(BytesIO(excel_file.read()))
+        # Convert DataFrame to a list of dictionaries for easier processing
+        products_data = df.to_dict(orient='records')
+        print(f"DEBUG: Excel data loaded. Rows to process: {len(products_data)}")
 
-        for index, row in df.iterrows():
-            sku = str(row.get('SKU', '')).strip()
-            nombre = str(row.get('Nombre', '')).strip()
-            descripcion = str(row.get('Descripción', '')).strip()
-            categoria = str(row.get('Categoria', 'General')).strip()
+        for index, row in df.iterrows(): # Iterar sobre el DataFrame directamente para mantener el índice
+            sku = str(row.get('SKU', '')).strip() if pd.notna(row.get('SKU')) else None # Manejar NaN
+            nombre = str(row.get('Nombre', '')).strip() if pd.notna(row.get('Nombre')) else None
+            descripcion = str(row.get('Descripción', '')).strip() if pd.notna(row.get('Descripción')) else None
+            categoria = str(row.get('Categoria', 'General')).strip() if pd.notna(row.get('Categoria')) else 'General'
 
-            # Normalize SKU and Name for association with uploaded images
-            normalized_sku = sku.replace(' ', '_').replace('.', '_').replace('-', '_').lower()
-            normalized_nombre = nombre.replace(' ', '_').replace('.', '_').replace('-', '_').lower()
+            # Normalizar SKU y Nombre para asociación con imágenes subidas
+            normalized_sku = sku.replace(' ', '_').replace('.', '_').replace('-', '_').lower() if sku else None
+            normalized_nombre = nombre.replace(' ', '_').replace('.', '_').replace('-', '_').lower() if nombre else None
 
             # Determine the image URL for the product:
             # 1. Try to match with uploaded images by normalized filename (SKU or Name)
             # 2. If no match, use the URL that might come in the Excel (if 'URL Imagen' column exists)
             # 3. If nothing, the URL will be None
             product_image_url = None
-            if normalized_sku and normalized_sku in image_urls_map: # Ensure SKU is not empty
+            if normalized_sku and normalized_sku in image_urls_map:
                 product_image_url = image_urls_map[normalized_sku]
                 print(f"DEBUG: SKU '{sku}' associated with uploaded image: {product_image_url}")
-            elif normalized_nombre and normalized_nombre in image_urls_map: # Ensure Name is not empty
+            elif normalized_nombre and normalized_nombre in image_urls_map:
                 product_image_url = image_urls_map[normalized_nombre]
                 print(f"DEBUG: Name '{nombre}' associated with uploaded image: {product_image_url}")
             else:
-                # If no associated image was uploaded, try to read from an 'URL Imagen' column in the Excel
-                excel_image_url = str(row.get('URL Imagen', '')).strip()
+                excel_image_url = str(row.get('URL Imagen', '')).strip() if pd.notna(row.get('URL Imagen')) else None
                 if excel_image_url:
                     product_image_url = excel_image_url
                     print(f"DEBUG: Using Excel image URL for '{sku}': {product_image_url}")
@@ -258,14 +271,25 @@ def upload_excel():
                 stock = int(row.get('Stock', 0))
             except (ValueError, TypeError):
                 excel_processing_errors.append(f"Row {index + 2}: Invalid Price or Stock. SKU: {sku}")
+                print(f"ERROR: Row {index + 2}: Invalid Price or Stock. SKU: {sku}")
                 continue
 
-            if not sku or not nombre or precio <= 0:
-                excel_processing_errors.append(f"Row {index + 2}: Incomplete or invalid data (SKU, Name, Price must be > 0). SKU: {sku}")
+            if not sku and not nombre: # Al menos SKU o Nombre deben existir
+                excel_processing_errors.append(f"Row {index + 2}: Missing SKU and Name. Product cannot be identified.")
+                print(f"ERROR: Row {index + 2}: Missing SKU and Name. Product cannot be identified.")
                 continue
+            if precio <= 0:
+                excel_processing_errors.append(f"Row {index + 2}: Price must be greater than 0. SKU: {sku}")
+                print(f"ERROR: Row {index + 2}: Price must be greater than 0. SKU: {sku}")
+                continue
+
 
             try:
-                existing_product = Product.query.filter_by(sku=sku).first()
+                existing_product = None
+                if sku:
+                    existing_product = Product.query.filter_by(sku=sku).first()
+                if not existing_product and nombre: # Si no se encontró por SKU, intenta por nombre
+                    existing_product = Product.query.filter_by(name=nombre).first()
 
                 if existing_product:
                     existing_product.nombre = nombre
@@ -273,9 +297,10 @@ def upload_excel():
                     existing_product.categoria = categoria
                     existing_product.precio = precio
                     existing_product.stock = stock
-                    existing_product.imagen_url = product_image_url # Assign the image URL
+                    existing_product.image_url = product_image_url # Assign the image URL
                     existing_product.activo = True
                     updates += 1
+                    print(f"DEBUG: Updated product: {nombre} (SKU: {sku})")
                 else:
                     new_product = Product(
                         sku=sku,
@@ -284,14 +309,16 @@ def upload_excel():
                         categoria=categoria,
                         precio=precio,
                         stock=stock,
-                        imagen_url=product_image_url # Assign the image URL
+                        image_url=product_image_url # Assign the image URL
                     )
                     db.session.add(new_product)
                     inserts += 1
+                    print(f"DEBUG: Inserted new product: {nombre} (SKU: {sku})")
                 db.session.commit()
             except Exception as err:
                 db.session.rollback()
                 excel_processing_errors.append(f"Row {index + 2}: Database error: {err}. SKU: {sku}")
+                print(f"ERROR: Row {index + 2}: Database error: {err}. SKU: {sku}")
 
         final_errors = image_upload_errors + excel_processing_errors
         response_message = f"Process completed. Inserted: {inserts}, Updated: {updates}."
@@ -306,6 +333,8 @@ def upload_excel():
         }), 200
 
     except Exception as e:
+        # Esto captura errores antes de que se procese el DataFrame (ej. archivo corrupto)
+        print(f"ERROR: Error processing Excel file or images: {e}")
         return jsonify({"message": f"Error processing Excel file: {str(e)}"}), 500
 
 # Route to delete all products (admin only)
@@ -315,13 +344,13 @@ def delete_all_products():
     if not current_user.is_admin:
         return jsonify({"message": "Access denied. Only administrators can delete products."}), 403
     try:
-        db.session.query(Product).delete()
+        # Delete all products from the database
+        num_deleted = Product.query.delete()
         db.session.commit()
-        return jsonify({"message": "All products have been deleted successfully."}), 200
+        return jsonify({"message": f"{num_deleted} productos eliminados con éxito."}), 200
     except Exception as e:
         db.session.rollback()
-        print(f"Error deleting products: {e}")
-        return jsonify({"message": "Error deleting products from the database."}), 500
+        return jsonify({"message": f"Error al eliminar productos: {str(e)}"}), 500
 
 # Route to get unique product categories
 @app.route('/api/categorias', methods=['GET'])
@@ -361,19 +390,21 @@ def login():
     username = data.get('username')
     password = data.get('password')
 
-    print(f"Attempting login for username: {username}") # Añade esta línea
+    print(f"DEBUG: Attempting login for username: {username}")
     user = User.query.filter_by(username=username).first()
 
     if user:
-        print(f"User found: {user.username}, is_admin: {user.is_admin}") # Añade esta línea
+        print(f"DEBUG: User found: {user.username}, is_admin: {user.is_admin}")
         if user.check_password(password):
-            print("Password check successful.") # Añade esta línea
+            print("DEBUG: Password check successful. Logging in user.")
             login_user(user)
+            # Marcar la sesión como permanente si es necesario, aunque por defecto no lo es
+            # session.permanent = True # Descomentar si quieres sesiones permanentes
             return jsonify({"message": "Login successful", "user": {"username": user.username, "is_admin": user.is_admin}}), 200
         else:
-            print("Password check failed.") # Añade esta línea
+            print("DEBUG: Password check failed.")
     else:
-        print(f"User not found for username: {username}") # Añade esta línea
+        print(f"DEBUG: User not found for username: {username}")
 
     return jsonify({"message": "Invalid credentials"}), 401
 
@@ -381,15 +412,18 @@ def login():
 @app.route('/logout', methods=['POST'])
 @login_required # Asegura que solo un usuario logueado pueda cerrar sesión
 def logout():
+    print("DEBUG: /logout endpoint reached.")
     logout_user() # Esto debería invalidar la sesión del usuario actual
-    # Puedes añadir un mensaje de depuración aquí para confirmar que se ejecuta
-    print("DEBUG: Usuario ha cerrado sesión.")
+    # Opcional: Limpiar explícitamente la sesión de Flask
+    session.clear()
+    print("DEBUG: Usuario ha cerrado sesión y sesión de Flask ha sido limpiada.")
     return jsonify({"message": "Sesión cerrada correctamente"}), 200
 
 
 # Route to check current session status
 @app.route('/api/session_status', methods=['GET'])
 def session_status():
+    print(f"DEBUG: /api/session_status endpoint reached. current_user.is_authenticated: {current_user.is_authenticated}")
     if current_user.is_authenticated:
         return jsonify({"is_authenticated": True, "username": current_user.username, "is_admin": current_user.is_admin}), 200
     else:
