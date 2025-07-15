@@ -379,10 +379,13 @@ def login():
 
 # Route for user logout
 @app.route('/logout', methods=['POST'])
-@login_required
+@login_required # Asegura que solo un usuario logueado pueda cerrar sesión
 def logout():
-    logout_user()
-    return jsonify({"message": "Session closed successfully"}), 200
+    logout_user() # Esto debería invalidar la sesión del usuario actual
+    # Puedes añadir un mensaje de depuración aquí para confirmar que se ejecuta
+    print("DEBUG: Usuario ha cerrado sesión.")
+    return jsonify({"message": "Sesión cerrada correctamente"}), 200
+
 
 # Route to check current session status
 @app.route('/api/session_status', methods=['GET'])
