@@ -26,7 +26,7 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or Config.SECRET_KEY # U
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 app.config['SESSION_COOKIE_SECURE'] = True # Must be True for SameSite=None in production (HTTPS)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_DOMAIN'] = '.onrender.com' # Set domain for Render deployment
+# app.config['SESSION_COOKIE_DOMAIN'] = '.onrender.com' # <--- ¡Esta línea ha sido eliminada!
 
 print(f"DEBUG: SQLALCHEMY_DATABASE_URI configured: {app.config['SQLALCHEMY_DATABASE_URI']}")
 
