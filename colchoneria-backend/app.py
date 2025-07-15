@@ -50,8 +50,12 @@ login_manager.init_app(app)
 login_manager.login_view = 'login' # Set the login view for redirection
 
 # CORS configuration to allow requests from your frontend (e.g., Netlify)
-# Cambiamos 'resources' por 'origins' para una configuración más directa
-CORS(app, supports_credentials=True, origins=["https://colchoneria-frontend.netlify.app", "http://localhost:4200"])
+CORS(app,
+     supports_credentials=True,
+     origins=["https://colchoneria-frontend.netlify.app", "http://localhost:4200"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], # Especificar métodos permitidos
+     allow_headers=["Content-Type", "Authorization", "X-Requested-With"] # Especificar encabezados permitidos
+)
 
 # User model for Flask-Login
 class User(UserMixin, db.Model):
