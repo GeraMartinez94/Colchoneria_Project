@@ -26,7 +26,6 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or Config.SECRET_KEY # U
 app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 app.config['SESSION_COOKIE_SECURE'] = True # Must be True for SameSite=None in production (HTTPS)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-# app.config['SESSION_COOKIE_DOMAIN'] = '.onrender.com' # <--- ¡Esta línea ha sido eliminada!
 
 print(f"DEBUG: SQLALCHEMY_DATABASE_URI configured: {app.config['SQLALCHEMY_DATABASE_URI']}")
 
@@ -51,7 +50,8 @@ login_manager.init_app(app)
 login_manager.login_view = 'login' # Set the login view for redirection
 
 # CORS configuration to allow requests from your frontend (e.g., Netlify)
-CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": ["https://colchoneria-frontend.netlify.app", "http://localhost:4200"]}})
+# Cambiamos 'resources' por 'origins' para una configuración más directa
+CORS(app, supports_credentials=True, origins=["https://colchoneria-frontend.netlify.app", "http://localhost:4200"])
 
 # User model for Flask-Login
 class User(UserMixin, db.Model):
