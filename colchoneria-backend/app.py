@@ -16,11 +16,6 @@ import cloudinary.uploader
 import cloudinary.api
 
 # Assuming you have a config.py file with your configurations
-# Example:
-# class Config:
-#     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///site.db'
-#     SQLALCHEMY_TRACK_MODIFICATIONS = False
-#     SECRET_KEY = os.environ.get('SECRET_KEY') or 'your_super_secret_key'
 from config import Config
 
 app = Flask(__name__)
@@ -34,7 +29,6 @@ app.config['SESSION_COOKIE_SAMESITE'] = 'None'
 app.config['SESSION_COOKIE_SECURE'] = True # Must be True for SameSite=None in production (HTTPS)
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 # Ensure this domain is correct for your Render backend
-# Example: if your backend is 'https://mi-app-backend.onrender.com', the domain would be '.onrender.com'
 app.config['SESSION_COOKIE_DOMAIN'] = '.onrender.com'
 # Configure permanent session lifetime (e.g., 7 days), only relevant if using remember=True in login_user
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7) # You can adjust this duration
@@ -212,7 +206,6 @@ def upload_excel():
 
             original_filename = img_file.filename
             # Clean up filename for association key and Cloudinary public_id
-            # Remove extension and normalize (e.g., spaces to underscores, lowercase)
             filename_without_ext = os.path.splitext(original_filename)[0]
             # Further normalize: replace spaces, dots, and hyphens with underscores, then lowercase
             normalized_filename = filename_without_ext.replace(' ', '_').replace('.', '_').replace('-', '_').lower()
@@ -243,24 +236,24 @@ def upload_excel():
 
     try:
         df = pd.read_excel(BytesIO(excel_file.read()))
-        # Convert DataFrame to a list of dictionaries for easier processing
-        products_data = df.to_dict(orient='records')
-        print(f"DEBUG: Excel data loaded. Rows to process: {len(products_data)}")
+        print(f"DEBUG: Excel data loaded. Columns found: {df.columns.tolist()}. Rows to process: {len(df)}")
 
         for index, row in df.iterrows(): # Iterate over the DataFrame directly to maintain the index
-            sku = str(row.get('SKU', '')).strip() if pd.notna(row.get('SKU')) else None # Handle NaN
-            nombre = str(row.get('Nombre', '')).strip() if pd.notna(row.get('Nombre')) else None
-            descripcion = str(row.get('Descripción', '')).strip() if pd.notna(row.get('Descripción')) else None
-            categoria = str(row.get('Categoría', 'General')).strip() if pd.notna(row.get('Categoría')) else 'General' # Corrected 'Categoria' to 'Categoría'
+            # Mapeo de columnas del Excel a los campos del modelo Product
+            sku = str(row.get('codigo', '')).strip() if pd.notna(row.get('codigo')) else None
+            nombre = str(row.get('modelo', '')).strip() if pd.notna(row.get('modelo')) else None
+            precio = float(row.get('precio', 0)) if pd.notna(row.get('precio')) else 0.0
 
-            # Normalize SKU and Name for association with uploaded images
+            # Valores por defecto para campos no presentes en el Excel de ejemplo
+            descripcion = str(row.get('Descripción', 'Sin descripción')).strip() if pd.notna(row.get('Descripción')) else 'Sin descripción'
+            categoria = str(row.get('Categoría', 'General')).strip() if pd.notna(row.get('Categoría')) else 'General'
+            stock = int(row.get('Stock', 0)) if pd.notna(row.get('Stock')) else 0
+
+            # Normalizar SKU y Nombre para asociación con imágenes subidas
             normalized_sku = sku.replace(' ', '_').replace('.', '_').replace('-', '_').lower() if sku else None
             normalized_nombre = nombre.replace(' ', '_').replace('.', '_').replace('-', '_').lower() if nombre else None
 
             # Determine the image URL for the product:
-            # 1. Try to match with uploaded images by normalized filename (SKU or Name)
-            # 2. If no match, use the URL that might come in the Excel (if 'URL Imagen' column exists)
-            # 3. If nothing, the URL will be None
             product_image_url = None
             if normalized_sku and normalized_sku in image_urls_map:
                 product_image_url = image_urls_map[normalized_sku]
@@ -269,6 +262,7 @@ def upload_excel():
                 product_image_url = image_urls_map[normalized_nombre]
                 print(f"DEBUG: Name '{nombre}' associated with uploaded image: {product_image_url}")
             else:
+                # Si no hay imagen subida asociada, intenta leer de una columna 'URL Imagen' si existe
                 excel_image_url = str(row.get('URL Imagen', '')).strip() if pd.notna(row.get('URL Imagen')) else None
                 if excel_image_url:
                     product_image_url = excel_image_url
@@ -278,24 +272,16 @@ def upload_excel():
 
 
             try:
-                precio = float(row.get('Precio', 0))
-                stock = int(row.get('Stock', 0))
-            except (ValueError, TypeError):
-                excel_processing_errors.append(f"Row {index + 2}: Invalid Price or Stock. SKU: {sku}")
-                print(f"ERROR: Row {index + 2}: Invalid Price or Stock. SKU: {sku}")
-                continue
+                # Validaciones básicas
+                if not nombre:
+                    excel_processing_errors.append(f"Row {index + 2}: Missing 'modelo' (Nombre). Product cannot be processed.")
+                    print(f"ERROR: Row {index + 2}: Missing 'modelo' (Nombre). Product cannot be processed.")
+                    continue
+                if precio <= 0:
+                    excel_processing_errors.append(f"Row {index + 2}: 'precio' must be greater than 0. Modelo: {nombre}")
+                    print(f"ERROR: Row {index + 2}: 'precio' must be greater than 0. Modelo: {nombre}")
+                    continue
 
-            if not sku and not nombre: # At least SKU or Name must exist
-                excel_processing_errors.append(f"Row {index + 2}: Missing SKU and Name. Product cannot be identified.")
-                print(f"ERROR: Row {index + 2}: Missing SKU and Name. Product cannot be identified.")
-                continue
-            if precio <= 0:
-                excel_processing_errors.append(f"Row {index + 2}: Price must be greater than 0. SKU: {sku}")
-                print(f"ERROR: Row {index + 2}: Price must be greater than 0. SKU: {sku}")
-                continue
-
-
-            try:
                 existing_product = None
                 if sku:
                     existing_product = Product.query.filter_by(sku=sku).first()
@@ -328,8 +314,8 @@ def upload_excel():
                 db.session.commit()
             except Exception as err:
                 db.session.rollback()
-                excel_processing_errors.append(f"Row {index + 2}: Database error: {err}. SKU: {sku}")
-                print(f"ERROR: Row {index + 2}: Database error: {err}. SKU: {sku}")
+                excel_processing_errors.append(f"Row {index + 2}: Database error: {err}. Modelo: {nombre}")
+                print(f"ERROR: Row {index + 2}: Database error: {err}. Modelo: {nombre}")
 
         final_errors = image_upload_errors + excel_processing_errors
         response_message = f"Process completed. Inserted: {inserts}, Updated: {updates}."
@@ -344,7 +330,7 @@ def upload_excel():
         }), 200
 
     except Exception as e:
-        # This catches errors before DataFrame processing (e.g., corrupt file)
+        # This catches errors before DataFrame processing (e.g., corrupt file, file not found)
         print(f"ERROR: Error processing Excel file or images: {e}")
         return jsonify({"message": f"Error processing Excel file: {str(e)}"}), 500
 
